@@ -89,9 +89,9 @@ function inspectFrameSymbols(syms){
   return {version:1,grid,seq,count,totalSize,flags,session:r32(data,8),
     crc:r32(data,26),chunk,expectedCrc,valid:crc32(chunk)===expectedCrc};
 }
-function packCimg({stream,filename="file.bin",mime="application/octet-stream",grid=32,width=512,height=512,fps=3}){
+function packCimg({stream,filename="file.bin",mime="application/octet-stream",grid=32,width=512,height=512,fps=3,repeatEach=1}){
   capacity(grid);
-  const meta=te.encode(JSON.stringify({version:1,filename,mime,grid,width,height,fps,streamCrc32:crc32(stream)}));
+  const meta=te.encode(JSON.stringify({version:1,filename,mime,grid,width,height,fps,repeatEach,streamCrc32:crc32(stream)}));
   assert(meta.length<=100000,"Metadata too large");
   const h=new Uint8Array(13);h.set([67,73,77,71,49],0);u32(h,5,meta.length);u32(h,9,stream.length);
   return concat([h,meta,stream]);
