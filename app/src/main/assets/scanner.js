@@ -7,6 +7,15 @@
 const C=root.CIMG;
 const GRIDS=[16,24,32,40,48,56,64,72,80,88,96];
 const MAGIC_NIBBLES=[4,3,4,9,4,13,4,7,0,1];
+let tracker=null,trackerMisses=0;
+function consistentControl(ctrl,frame){
+ return !ctrl||(ctrl.session===frame.session&&ctrl.seq===frame.seq&&ctrl.count===frame.count&&ctrl.flags===frame.flags);
+}
+function readControl(img,box,n,rot){
+ return root.CimgContour?root.CimgContour.readRail(img,box,n,rot):null;
+}
+function trackerReset(){tracker=null;trackerMisses=0;}
+
 function nearDark(d,p){return d[p]<125&&d[p+1]<125&&d[p+2]<135}
 function detectCandidates(img){
  const {data:d,width:w,height:h}=img;
@@ -125,18 +134,50 @@ function findFrame(img,bounds,debug){
            if(r.partial && !debug.partial)debug.partial=r.partial;
          }
        }
-       if(r?.valid){if(debug){debug.grid=n;debug.rotation=rot*90;debug.phase='decoded';}return r.frame;}
+       if(r?.valid){
+         const ctrl=readControl(img,box,n,rot);
+         if(!consistentControl(ctrl,r.frame))continue;
+         if(debug){debug.grid=n;debug.rotation=rot*90;debug.phase='decoded';debug.control=ctrl;debug._box=box;debug._rot=rot;}
+         return r.frame;
+       }
      }
    }
   }
  }
  return null;
 }
-function decodeImageData(img,debug){
- if(debug){debug.phase='no-border';debug.candidates=0;debug.headers=0;debug.lastError='';}
- return findFrame(img,detectCandidates(img),debug);
+/* Fast path: a successful decode locks the square ROI and module count.
+   A valid contour header identifies already-received frames in O(perimeter)
+   without decoding thousands of colored cells again. The CRC of any new
+   payload is still checked by the original v1 decoder. */
+function decodeImageData(img,debug,skipKnown){
+ if(debug){debug.phase='no-border';debug.candidates=0;debug.headers=0;debug.lastError='';debug.partial=null;debug.control=null;debug.fastSkip=false;}
+ if(tracker){
+   const {box,n,rot}=tracker;
+   const rail=readControl(img,box,n,rot);
+   if(rail&&typeof skipKnown==='function'&&skipKnown(rail)){
+     if(debug){debug.phase='duplicate';debug.control=rail;debug.grid=n;debug.rotation=rot*90;debug.fastSkip=true;debug.candidates=1;}
+     trackerMisses=0;return null;
+   }
+   const r=tryGrid(img,box,n,rot,0,0,1);
+   if(r?.valid&&consistentControl(rail,r.frame)){
+     trackerMisses=0;
+     if(debug){debug.phase='tracked';debug.control=rail;debug.grid=n;debug.rotation=rot*90;debug.candidates=1;debug.headers=1;}
+     return r.frame;
+   }
+   if(debug&&r?.partial){debug.partial=r.partial;debug.phase='checksum';debug.headers=1;debug.lastError=r.error;}
+   trackerMisses++;
+   if(trackerMisses%4!==0)return null;
+ }
+ const boxes=detectCandidates(img);
+ const frame=findFrame(img,boxes,debug);
+ if(frame&&debug?._box){
+   tracker={box:debug._box,n:debug.grid,rot:debug._rot};
+   trackerMisses=0;
+ }
+ return frame;
 }
-const api={detectCandidates,detectBounds,findFrame,decodeImageData};
+const api={detectCandidates,detectBounds,findFrame,decodeImageData,trackerReset};
 root.CimgScanner=api;
 if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(globalThis);
