@@ -2,7 +2,8 @@
 (function(root){
 "use strict";
 const colors=root.CIMG.PALETTE;
-function paintIndices(symbols,width,height){
+function paintIndices(symbols,width,height,contour=false){
+  if(contour)return root.CimgContour.pixelIndices(symbols,width,height,root.CIMG.decodeFrameSymbols(symbols));
   const grid=Math.sqrt(symbols.length),unit=Math.floor(Math.min(width,height)/(grid+6));
   if(unit<2)throw Error("Image too small for this grid");
   const ox=Math.floor((width-unit*(grid+6))/2),oy=Math.floor((height-unit*(grid+6))/2);
@@ -35,7 +36,7 @@ function lzw(indices){
 function createWriter(){
   const b=[];return {b, byte(v){b.push(v&255)},word(v){b.push(v&255,(v>>>8)&255)},ascii(s){for(const c of s)b.push(c.charCodeAt(0))},bytes(a){for(const v of a)b.push(v)}};
 }
-async function encodeGif(frames,{width=512,height=512,fps=3,repeatEach=1,onProgress}={}){
+async function encodeGif(frames,{width=512,height=512,fps=3,repeatEach=1,contour=false,onProgress}={}){
   if(!frames.length)throw Error("No GIF frames");
   if(frames.length>400)throw Error("GIF limit: 400 unique frames. Use .cimg or on-screen playback");
   if(width*height*frames.length>160000000)throw Error("GIF too large. Reduce image resolution or frames");
@@ -53,7 +54,7 @@ async function encodeGif(frames,{width=512,height=512,fps=3,repeatEach=1,onProgr
   for(let i=0;i<frames.length;i++){
     w.bytes([0x21,0xf9,4,0x04]);w.word(delayAt(tick++));w.bytes([0,0]);
     w.byte(0x2c);w.word(0);w.word(0);w.word(width);w.word(height);w.byte(0);
-    w.byte(4);w.bytes(lzw(paintIndices(frames[i],width,height)));
+    w.byte(4);w.bytes(lzw(paintIndices(frames[i],width,height,contour)));
     // A transparent no-op frame retains the previous image (disposal method 1).
     // The 1x1 pixel uses palette index 8, transparency flag enabled.
     for(let n=1;n<repeatEach;n++){
