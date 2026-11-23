@@ -41,7 +41,7 @@
   <div class="actions">
     <button id="btnCimg" disabled>↓ Salva .cimg</button>
     <button id="btnGif" disabled>↓ Esporta GIF</button>
-    <button id="btnPng" disabled>↓ PNG fotogramma</button>
+    <button id="btnPng" disabled>↓ PNG (1 fotogramma)</button>
     <button id="btnWebm" disabled>↓ Registra WebM</button>
   </div>
   <p class="help">Per trasferire da Windows: riproduci il codice a schermo, apri lo scanner nell'APK Android e inquadra lo schermo. Mantieni entrambi fermi, luminosità alta e una matrice leggibile.</p>
@@ -52,8 +52,11 @@
   <div class="cameraBox"><video id="camera" autoplay playsinline muted></video><div class="viewfinder"><i></i><i></i><i></i><i></i></div></div>
   <div id="scanInfo" class="stats">Inquadra frontalmente il codice animato con tutte e quattro le cornici visibili.</div>
   <div class="progress"><div id="progressFill"></div></div>
+  <div class="diagnostics" id="scanDiagnostics" aria-live="polite">Diagnostica: fotocamera non avviata</div>
+  <div class="actions"><button id="btnCapture">📷 Salva fotogramma</button><button id="btnSaveLog">↓ Esporta debug.log</button></div>
+  <label class="filepick" style="border-color:var(--line);background:#162332">Test immagine: seleziona un PNG/JPG del codice dal dispositivo<input id="scanImageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></label>
   <button id="btnRecovered" class="primary" disabled>↓ Salva file ricostruito</button>
-  <p class="help">Se una scansione non riesce, prova 24×24 o 32×32, 1–3 FPS, avvicina la fotocamera e tienila perpendicolare allo schermo. I codici troppo densi sono più difficili da leggere.</p>
+  <p class="help">Se una scansione non riesce, prova 24×24 o 32×32, 1–3 FPS, avvicina la fotocamera e tienila perpendicolare allo schermo. Se rimane a zero, usa «Salva fotogramma» e «Esporta debug.log» per diagnosticare. Un PNG è un solo fotogramma: per file con più parti occorre riprodurre la GIF o la sequenza.</p>
 </section>
 <section id="infoPanel" class="panel hidden"><div class="intro">
   <h1>Come funziona CIMG v1</h1><p>Un codice ottico temporale con 16 colori = 4 bit per cella. I primi 16 simboli calibrano i colori per ogni fotogramma; un bordo ad alto contrasto aiuta il rilevamento.</p></div>
