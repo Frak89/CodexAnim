@@ -5,6 +5,26 @@ const $=id=>document.getElementById(id), C=globalThis.CIMG, G=globalThis.CimgGIF
 const gridChoices=[16,24,32,40,48,56,64,72,80,88,96];
 let source=null,pack=null,frames=[],frameNumber=0,playTimer=null;
 let cameraStream=null,scanTimer=null,scanBusy=false,recovered=null,session=null;
+let lastScanStatus="",lastDiagnostics=null,lastCameraSize="";
+const scanStats={samples:0,border:0,header:0,checksum:0,decoded:0,unique:0,duplicate:0,errors:0};
+const scanLog=[];let lastStatsRendered=0;
+function logScan(event,detail=""){
+  const record=new Date().toISOString()+"  "+event+(detail?"  "+detail:"");
+  scanLog.push(record);if(scanLog.length>400)scanLog.shift();
+}
+function renderDiagnostics(){
+ const d=lastDiagnostics||{};
+ $("scanDiagnostics").textContent="Fotocamera: "+(cameraStream?"attiva "+lastCameraSize:"non attiva")+
+ " | letture: "+scanStats.samples+" | cornici: "+scanStats.border+
+ " | header: "+scanStats.header+" | CRC errati: "+scanStats.checksum+
+ " | validi: "+scanStats.decoded+" | nuovi: "+scanStats.unique+
+ " | ripetuti: "+scanStats.duplicate+
+ "\nFase: "+(d.phase||"in attesa")+" | candidati: "+(d.candidates||0)+
+ (d.grid?" | griglia "+d.grid+" | rotazione "+d.rotation+"°":"")+
+ (d.lastError?"\nUltimo errore: "+d.lastError:"")+
+ (session?"\nFrammenti mancanti: "+(session.count-session.received)+" su "+session.count:"")+
+ (lastScanStatus?"\nStato: "+lastScanStatus:"");
+}
 const canvas=$("display"),ctx=canvas.getContext("2d",{alpha:false});
 const scanCanvas=document.createElement("canvas"),scanCtx=scanCanvas.getContext("2d",{willReadFrequently:true});
 function fmt(n){if(n<1024)return n+" B";if(n<1048576)return(n/1024).toFixed(1)+" KiB";return(n/1048576).toFixed(2)+" MiB"}
@@ -183,7 +203,7 @@ function openTab(which){
   }
   if(which!=="scan")stopScanner();
 }
-function showScan(t){$("scanInfo").textContent=t}
+function showScan(t){lastScanStatus=t;$("scanInfo").textContent=t}
 async function startScanner(){
   stopScanner();
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){
@@ -191,28 +211,33 @@ async function startScanner(){
   }
   try{
     cameraStream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:"environment"},width:{ideal:1280},height:{ideal:720}}});
-    $("camera").srcObject=cameraStream;await $("camera").play();showScan("Fotocamera attiva. Inquadra tutto il quadrato, frontalmente.");
+    $("camera").srcObject=cameraStream;await $("camera").play();
+    lastCameraSize=$("camera").videoWidth+"×"+$("camera").videoHeight;
+    logScan("camera start",lastCameraSize);showScan("Fotocamera attiva. Inquadra tutto il quadrato, frontalmente.");renderDiagnostics();
     scanTimer=setInterval(scanTick,110);message("Scanner avviato.");
-  }catch(e){message("Fotocamera: "+e.message+". Controlla il permesso CAMERA.",true)}
+  }catch(e){logScan("camera error",e.message);message("Fotocamera: "+e.message+". Controlla il permesso CAMERA.",true);renderDiagnostics()}
 }
 function stopScanner(){
   if(scanTimer)clearInterval(scanTimer);scanTimer=null;
   if(cameraStream){cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null}
-  $("camera").srcObject=null;
+  $("camera").srcObject=null;renderDiagnostics();
 }
 function resetScan(){
   session=null;recovered=null;$("btnRecovered").disabled=true;$("progressFill").style.width="0%";
-  showScan("Ricezione azzerata. Inquadra il codice animato.");
+  for(const k of Object.keys(scanStats))scanStats[k]=0;
+  scanLog.length=0;lastDiagnostics=null;
+  showScan("Ricezione azzerata. Inquadra il codice animato.");logScan("reset");renderDiagnostics();
 }
 async function receive(frame){
-  if(frame.count>10000||frame.totalSize>100*1024*1024)return;
+  if(frame.count>10000||frame.totalSize>100*1024*1024){logScan("rejected","Too many frames or payload too large");return;}
   const id=[frame.session,frame.crc,frame.count,frame.totalSize].join(":");
   if(!session||session.id!==id){
     session={id,parts:new Array(frame.count),received:0,...frame};
-    recovered=null;$("btnRecovered").disabled=true;
+    recovered=null;$("btnRecovered").disabled=true;logScan("new session",id);
   }
-  if(session.parts[frame.seq])return;
-  session.parts[frame.seq]=frame.chunk;session.received++;
+  if(session.parts[frame.seq]){scanStats.duplicate++;return;}
+  session.parts[frame.seq]=frame.chunk;session.received++;scanStats.unique++;
+  logScan("fragment","#"+(frame.seq+1)+"/"+frame.count+" session="+frame.session.toString(16));
   const p=session.received/frame.count;
   $("progressFill").style.width=(p*100).toFixed(1)+"%";
   showScan("Sessione "+frame.session.toString(16)+" · "+session.received+"/"+frame.count+
@@ -225,22 +250,63 @@ async function receive(frame){
     recovered=C.decodeInner(await inflated(stream));
     $("btnRecovered").disabled=false;
     showScan("✓ Ricostruzione COMPLETA: "+recovered.filename+" ("+fmt(recovered.bytes.length)+") — CRC32 corretto");
-    message("File recuperato. Premi «Salva file ricostruito».");stopScanner();
-  }catch(e){showScan("Errore ricostruzione: "+e.message);message(e.message,true);session=null}
+    logScan("complete",recovered.filename+" "+recovered.bytes.length+" bytes");message("File recuperato. Premi «Salva file ricostruito».");stopScanner();renderDiagnostics();
+  }catch(e){scanStats.errors++;logScan("rebuild error",e.message);showScan("Errore ricostruzione: "+e.message);message(e.message,true);session=null;renderDiagnostics();}
 }
 async function scanTick(){
   if(scanBusy||!cameraStream||recovered)return;
   const v=$("camera");if(v.readyState<2||!v.videoWidth)return;
   scanBusy=true;
   try{
-    const factor=Math.min(1,800/v.videoWidth,600/v.videoHeight);
+    const factor=Math.min(1,1024/v.videoWidth,768/v.videoHeight);
     scanCanvas.width=Math.floor(v.videoWidth*factor);scanCanvas.height=Math.floor(v.videoHeight*factor);
     scanCtx.drawImage(v,0,0,scanCanvas.width,scanCanvas.height);
     const im=scanCtx.getImageData(0,0,scanCanvas.width,scanCanvas.height);
-    const frame=globalThis.CimgScanner.decodeImageData(im);
-    if(frame)await receive(frame);
-  }catch(e){/* bad individual image; keep scanning */}
+    const diag={};scanStats.samples++;
+    const frame=globalThis.CimgScanner.decodeImageData(im,diag);
+    lastDiagnostics=diag;
+    if(diag.candidates)scanStats.border++;
+    if(diag.headers)scanStats.header++;
+    if(diag.phase==="checksum")scanStats.checksum++;
+    if(frame){scanStats.decoded++;await receive(frame);}
+    const now=Date.now();
+    if(now-lastStatsRendered>750){renderDiagnostics();lastStatsRendered=now;}
+  }catch(e){scanStats.errors++;logScan("scanner exception",e.message);renderDiagnostics();}
   finally{scanBusy=false}
+}
+async function captureScan(){
+ try{
+   const v=$("camera");if(!cameraStream||!v.videoWidth)throw Error("Avvia prima la fotocamera");
+   const c=document.createElement("canvas");c.width=v.videoWidth;c.height=v.videoHeight;
+   c.getContext("2d").drawImage(v,0,0,c.width,c.height);
+   const b=await new Promise(resolve=>c.toBlob(resolve,"image/png"));
+   if(!b)throw Error("PNG non disponibile");
+   await downloadBlob(b,"CodexAnim_camera_snapshot.png");logScan("snapshot saved",v.videoWidth+"×"+v.videoHeight);
+ }catch(e){message("Fotogramma: "+e.message,true);logScan("snapshot error",e.message)}
+}
+async function exportDebug(){
+ try{
+   const report=["CodexAnim scan debug v1.1",new Date().toISOString(),
+    "Camera: "+lastCameraSize,"Diagnostics: "+$("scanDiagnostics").textContent,
+    "Configuration: screen recording is not included", "",...scanLog].join("\n");
+   await downloadBlob(new Blob([report],{type:"text/plain"}),"CodexAnim_debug.log");
+ }catch(e){message("debug.log: "+e.message,true)}
+}
+async function decodePhoto(file){
+ if(!file)return;
+ try{
+   const bmp=await createImageBitmap(file);const factor=Math.min(1,960/bmp.width,720/bmp.height);
+   scanCanvas.width=Math.max(1,Math.floor(bmp.width*factor));
+   scanCanvas.height=Math.max(1,Math.floor(bmp.height*factor));
+   scanCtx.drawImage(bmp,0,0,scanCanvas.width,scanCanvas.height);bmp.close?.();
+   const diag={},im=scanCtx.getImageData(0,0,scanCanvas.width,scanCanvas.height);
+   const frame=globalThis.CimgScanner.decodeImageData(im,diag);
+   lastDiagnostics=diag;lastCameraSize="file immagine "+scanCanvas.width+"×"+scanCanvas.height;
+   logScan("photo decode",file.name+" "+diag.phase+(diag.lastError?" "+diag.lastError:""));
+   if(frame){scanStats.decoded++;await receive(frame);message("Fotogramma #"+(frame.seq+1)+" identificato nell'immagine.");}
+   else message("Immagine non decodificata: "+diag.phase+". Esporta debug.log.",true);
+   renderDiagnostics();
+ }catch(e){scanStats.errors++;logScan("photo error",e.message);message("Immagine: "+e.message,true)}
 }
 async function saveRecovered(){
   if(!recovered)return;
@@ -255,8 +321,10 @@ function wire(){
   $("btnCimg").onclick=saveCimg;$("btnGif").onclick=saveGif;$("btnPng").onclick=savePng;$("btnWebm").onclick=saveWebm;
   $("tabCreate").onclick=()=>openTab("create");$("tabScan").onclick=()=>openTab("scan");$("tabInfo").onclick=()=>openTab("info");
   $("btnCamera").onclick=startScanner;$("btnCameraStop").onclick=stopScanner;$("btnReset").onclick=resetScan;$("btnRecovered").onclick=saveRecovered;
+  $("btnCapture").onclick=captureScan;$("btnSaveLog").onclick=exportDebug;
+  $("scanImageInput").onchange=e=>{decodePhoto(e.target.files[0]);e.target.value="";};
   $("palette").innerHTML=C.PALETTE.map((c,i)=>'<div style="background:'+c+'">'+i.toString(16).toUpperCase()+'</div>').join("");
-  capacityInfo();
+  capacityInfo();renderDiagnostics();
 }
 globalThis.CodexUI={stopScanner,closeFullscreen(){if(document.fullscreenElement)document.exitFullscreen()}};
 wire();
