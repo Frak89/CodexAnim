@@ -336,6 +336,12 @@ async function saveRecovered(){
 }
 function wire(){
   $("fileInput").addEventListener("change",e=>openInput(e.target.files[0]));
+  $("fps").addEventListener("change",()=> {
+    if(Number($("fps").value)>=30 && Number($("repeatEach").value)===1){
+      $("repeatEach").value="10";
+      message("30 FPS selezionati: ripetizione 10× per mantenere ogni matrice leggibile ~330 ms.");
+    }
+  });
   for(const id of ["grid","fps","repeatEach","w","h","duration","autoGrid"])$(id).addEventListener("change",()=>{stopPlay();capacityInfo();if(frames.length)message("Configurazione cambiata: premi «Prepara sequenza» per applicarla.")});
   $("btnGenerate").onclick=prepare;$("btnPlay").onclick=play;$("btnStop").onclick=stopPlay;
   $("btnFull").onclick=()=>{const box=document.querySelector(".screen");if(box.requestFullscreen)box.requestFullscreen().catch(e=>message(e.message,true));else message("Fullscreen non disponibile",true)};
