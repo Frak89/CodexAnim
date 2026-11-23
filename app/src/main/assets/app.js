@@ -6,6 +6,8 @@ const gridChoices=[16,24,32,40,48,56,64,72,80,88,96];
 let source=null,pack=null,frames=[],frameNumber=0,playTimer=null;
 let cameraStream=null,scanTimer=null,scanBusy=false,recovered=null,session=null;
 let lastScanStatus="",lastDiagnostics=null,lastCameraSize="";
+const temporal=globalThis.CimgRecovery.createRecovery();
+let lastPartialStamp=0;
 const scanStats={samples:0,border:0,header:0,checksum:0,decoded:0,unique:0,duplicate:0,errors:0};
 const scanLog=[];let lastStatsRendered=0;
 function logScan(event,detail=""){
@@ -19,6 +21,8 @@ function renderDiagnostics(){
  " | header: "+scanStats.header+" | CRC errati: "+scanStats.checksum+
  " | validi: "+scanStats.decoded+" | nuovi: "+scanStats.unique+
  " | ripetuti: "+scanStats.duplicate+
+ " | riparati CRC: "+temporal.getStats().repaired+
+ " | in memoria: "+temporal.getStats().cached+
  "\nFase: "+(d.phase||"in attesa")+" | candidati: "+(d.candidates||0)+
  (d.grid?" | griglia "+d.grid+" | rotazione "+d.rotation+"°":"")+
  (d.lastError?"\nUltimo errore: "+d.lastError:"")+
@@ -225,7 +229,7 @@ function stopScanner(){
 function resetScan(){
   session=null;recovered=null;$("btnRecovered").disabled=true;$("progressFill").style.width="0%";
   for(const k of Object.keys(scanStats))scanStats[k]=0;
-  scanLog.length=0;lastDiagnostics=null;
+  scanLog.length=0;lastDiagnostics=null;temporal.clear();
   showScan("Ricezione azzerata. Inquadra il codice animato.");logScan("reset");renderDiagnostics();
 }
 async function receive(frame){
@@ -236,6 +240,7 @@ async function receive(frame){
     recovered=null;$("btnRecovered").disabled=true;logScan("new session",id);
   }
   if(session.parts[frame.seq]){scanStats.duplicate++;return;}
+  temporal.dropReceived(frame);
   session.parts[frame.seq]=frame.chunk;session.received++;scanStats.unique++;
   logScan("fragment","#"+(frame.seq+1)+"/"+frame.count+" session="+frame.session.toString(16));
   const p=session.received/frame.count;
@@ -268,7 +273,18 @@ async function scanTick(){
     if(diag.candidates)scanStats.border++;
     if(diag.headers)scanStats.header++;
     if(diag.phase==="checksum")scanStats.checksum++;
-    if(frame){scanStats.decoded++;await receive(frame);}
+    if(frame){
+      scanStats.decoded++;
+      await receive(frame);
+    }else if(diag.partial && !recovered){
+      const fixed=temporal.add(diag.partial);
+      if(fixed){scanStats.decoded++;logScan("CRC recovered","frame "+(fixed.seq+1));await receive(fixed);}
+      else if(Date.now()-lastPartialStamp>1800){
+        lastPartialStamp=Date.now();
+        logScan("noisy frame","seq="+(diag.partial.seq+1)+" grid="+diag.partial.grid+
+          " samples="+temporal.getStats().cached);
+      }
+    }
     const now=Date.now();
     if(now-lastStatsRendered>750){renderDiagnostics();lastStatsRendered=now;}
   }catch(e){scanStats.errors++;logScan("scanner exception",e.message);renderDiagnostics();}
