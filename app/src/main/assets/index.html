@@ -11,7 +11,7 @@
   <div class="intro"><h1>File → codice animato</h1><p>Trasferisci qualsiasi file con fotogrammi colorati. Il ricevitore ricostruisce i byte originali con verifica CRC32.</p></div>
   <label class="filepick">① Carica file oppure .cimg <input id="fileInput" type="file"></label>
   <div id="selectedFile" class="muted">Nessun file selezionato</div>
-  <div class="controls">
+  <label class="autoopt"><input id="autoGrid" type="checkbox" checked> Ottimizza automaticamente la densità della matrice in base a pixel, FPS e dimensione del file (disattivabile per scegliere manualmente).</label><div class="controls">
     <label>Matrice colori <select id="grid">
       <option value="16">16 × 16</option><option value="24">24 × 24</option>
       <option value="32" selected>32 × 32</option><option value="40">40 × 40</option>
