@@ -1,6 +1,54 @@
-# CodexAnim — CIMG v0.1
+# CodexAnim — CIMG v0.4
 
 Codice ottico **animato a 16 colori** per trasferire file, senza Wi-Fi né Bluetooth, da un monitor Windows alla fotocamera Android. Prototipo sperimentale offline.
+
+## v0.4 — cornice fissa con bit di controllo dei fotogrammi
+
+La geometria del quadrato rimane **completamente statica**. Ogni passaggio dati cambia
+i **16 colori dei quadratini interni**: questi rappresentano i byte del file. La
+cornice di controllo esterna cambia fra due colori: **ciano = 0**, **magenta = 1**.
+Non ci sono swirl, deformazioni o zoom: i pixel rappresentano informazioni vere.
+
+La codifica ottica CIMG v1 della matrice e il bordo nero di riferimento restano
+invariati per la compatibilità con gli scanner precedenti. Il nuovo contorno usa
+una griglia complessiva di **(N+10)×(N+10)** moduli, con finder nero a distanza
+di 4 moduli dalla cornice esterna e dati **N×N** dentro.
+
+I primi **96 bit** del contorno codificano 12 byte (bit più significativo prima):
+
+| Byte | Campo | Funzione |
+|---|---|---|
+| 0 | 0xC7 | sincronizzazione |
+| 1 | 0x40 OR flags | protocollo + START/END |
+| 2–5 | sessionId uint32 | identificatore della trasmissione |
+| 6–7 | sequence uint16 | numero del frammento, da zero |
+| 8–9 | count uint16 | totale frammenti |
+| 10–11 | CRC16 CCITT-FALSE | verifica dell'intestazione di controllo |
+
+Le celle aggiuntive del contorno ripetono ciclicamente i 96 bit per avere
+ridondanza visiva. La **sezione dati non cambia**: continua a utilizzare il CRC32
+e il vecchio protocollo CIMG, quindi i file `.cimg` precedenti restano leggibili.
+
+### Aggancio e scanner veloce
+
+Dopo un'acquisizione riuscita, lo scanner mantiene la **regione di interesse (ROI)**,
+la griglia e l'orientamento. Prima di riprocessare le migliaia di celle del
+fotogramma successivo, può leggere soltanto la cornice (96 bit) e
+**saltare subito i duplicati già ricevuti**. In caso di spostamento del quadrato
+ricerca nuovamente la cornice nera sull'immagine. Il CRC16 della cornice
+non sostituisce il CRC32 dei dati; un frammento non viene mai accettato sulla
+sola base dei bit di controllo.
+
+Nel generatore seleziona **Cornice di controllo v0.4**, GIF 30 FPS e
+**Ripetizioni temporali 10×** per tenere ciascun payload visibile ~333 ms.
+La versione dimostrativa usa 24×24, 12 ripetizioni, 30 FPS e 3 frame utili
+per trasmettere uno SVG da 1801 byte. I file possono essere ricostruiti
+grazie alle parti della matrice, non tramite la GIF compressa in sé.
+
+Limiti: la cornice richiede orientamento e un campionamento abbastanza preciso
+per leggere il CRC16. Il tracking ROI accelera le letture a posizione stabile
+ma non corregge prospettiva importante, riflessi o rolling shutter. Le prove
+software non garantiscono il funzionamento su ogni fotocamera reale.
 
 ## v0.3 — fotogrammi rumorosi e GIF a 30 FPS con tenuta temporale
 
