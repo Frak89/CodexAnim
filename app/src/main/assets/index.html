@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="it"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a101c"><title>CodexAnim — CIMG</title>
+<link rel="stylesheet" href="style.css">
+</head><body>
+<header><div><span class="logo">◈</span><strong>CODEX<span class="accent">ANIM</span></strong><small>CHROMA STREAM / CIMG v1</small></div><span class="status">OFFLINE • 16 COLORI</span></header>
+<nav><button id="tabCreate" class="tab active">◫ Genera</button><button id="tabScan" class="tab">◎ Scansiona</button><button id="tabInfo" class="tab">ⓘ Protocollo</button></nav>
+<main>
+<section id="createPanel" class="panel">
+  <div class="intro"><h1>File → codice animato</h1><p>Trasferisci qualsiasi file con fotogrammi colorati. Il ricevitore ricostruisce i byte originali con verifica CRC32.</p></div>
+  <label class="filepick">① Carica file oppure .cimg <input id="fileInput" type="file"></label>
+  <div id="selectedFile" class="muted">Nessun file selezionato</div>
+  <div class="controls">
+    <label>Matrice colori <select id="grid">
+      <option value="16">16 × 16</option><option value="24">24 × 24</option>
+      <option value="32" selected>32 × 32</option><option value="40">40 × 40</option>
+      <option value="48">48 × 48</option><option value="56">56 × 56</option>
+      <option value="64">64 × 64</option><option value="72">72 × 72</option>
+      <option value="80">80 × 80</option><option value="88">88 × 88</option>
+      <option value="96">96 × 96</option>
+    </select></label>
+    <label>Velocità GIF / codice <select id="fps">
+      <option value="1">1 FPS • affidabile</option><option value="2">2 FPS</option><option value="3" selected>3 FPS • consigliato</option>
+      <option value="4">4 FPS</option><option value="5">5 FPS</option><option value="6">6 FPS</option>
+      <option value="8">8 FPS</option><option value="10">10 FPS</option><option value="12">12 FPS</option>
+    </select></label>
+    <label>Larghezza immagine (px)<input id="w" type="number" min="128" max="1920" step="16" value="512"></label>
+    <label>Altezza immagine (px)<input id="h" type="number" min="128" max="1920" step="16" value="512"></label>
+    <label>Durata di riferimento <select id="duration"><option value="10">10 secondi</option><option value="30">30 secondi</option><option value="60" selected>1 minuto</option><option value="180">3 minuti</option><option value="600">10 minuti</option></select></label>
+    <label>Ripetizione <select id="repeat"><option value="1" selected>Infinita (ciclica)</option><option value="0">Una volta</option></select></label>
+  </div>
+  <div id="stats" class="stats" aria-live="polite"></div>
+  <div class="actions">
+    <button id="btnGenerate" class="primary">② Prepara sequenza</button>
+    <button id="btnPlay" disabled>▶ Riproduci</button>
+    <button id="btnStop" disabled>■ Ferma</button>
+    <button id="btnFull" disabled>⛶ Schermo intero</button>
+  </div>
+  <div class="screen"><canvas id="display" width="512" height="512"></canvas><div id="frameBadge">ANTEPRIMA</div></div>
+  <div class="actions">
+    <button id="btnCimg" disabled>↓ Salva .cimg</button>
+    <button id="btnGif" disabled>↓ Esporta GIF</button>
+    <button id="btnPng" disabled>↓ PNG fotogramma</button>
+    <button id="btnWebm" disabled>↓ Registra WebM</button>
+  </div>
+  <p class="help">Per trasferire da Windows: riproduci il codice a schermo, apri lo scanner nell'APK Android e inquadra lo schermo. Mantieni entrambi fermi, luminosità alta e una matrice leggibile.</p>
+</section>
+<section id="scanPanel" class="panel hidden">
+  <div class="intro"><h1>Fotocamera → file</h1><p>Riconosce i fotogrammi CIMG, riceve anche quelli fuori ordine e completa il file nei cicli successivi.</p></div>
+  <div class="actions"><button id="btnCamera" class="primary">◎ Avvia fotocamera</button><button id="btnCameraStop">■ Disattiva</button><button id="btnReset">↺ Azzera ricezione</button></div>
+  <div class="cameraBox"><video id="camera" autoplay playsinline muted></video><div class="viewfinder"><i></i><i></i><i></i><i></i></div></div>
+  <div id="scanInfo" class="stats">Inquadra frontalmente il codice animato con tutte e quattro le cornici visibili.</div>
+  <div class="progress"><div id="progressFill"></div></div>
+  <button id="btnRecovered" class="primary" disabled>↓ Salva file ricostruito</button>
+  <p class="help">Se una scansione non riesce, prova 24×24 o 32×32, 1–3 FPS, avvicina la fotocamera e tienila perpendicolare allo schermo. I codici troppo densi sono più difficili da leggere.</p>
+</section>
+<section id="infoPanel" class="panel hidden"><div class="intro">
+  <h1>Come funziona CIMG v1</h1><p>Un codice ottico temporale con 16 colori = 4 bit per cella. I primi 16 simboli calibrano i colori per ogni fotogramma; un bordo ad alto contrasto aiuta il rilevamento.</p></div>
+  <div class="palette" id="palette"></div>
+  <div class="spec"><b>CODE_START</b> → primo frammento (bit 0)<br><b>DATA</b> → fotogrammi numerati con ID sessione<br><b>CODE_END</b> → ultimo frammento (bit 1)<br><b>CRC32</b> → controllo del singolo frammento e dell'intero stream<br><b>.cimg</b> → contenitore binario con metadati + dati zlib<br><b>GIF</b> → animazione ripetuta della stessa sequenza<br><b>Codifica</b> → 2 celle per byte; protocollo aperto documentato nel README</div>
+  <p class="help">Formato sperimentale: non è un QR standard e richiede lo scanner CodexAnim. La capacità teorica non è una garanzia di velocità reale: inquadrare un display con il telefono introduce perdita di fotogrammi, prospettiva, riflessi e differenze cromatiche.</p>
+</section>
+<div id="message" role="status" aria-live="polite"></div>
+</main>
+<script src="codec.js"></script><script src="gif.js"></script><script src="app.js"></script>
+</body></html>
