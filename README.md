@@ -2,6 +2,23 @@
 
 Codice ottico **animato a 16 colori** per trasferire file, senza Wi-Fi né Bluetooth, da un monitor Windows alla fotocamera Android. Prototipo sperimentale offline.
 
+## v0.2 — correzione scanner e diagnostica (23 novembre 2026)
+
+La v0.1 poteva ignorare la matrice quando occupava meno del 25% dell'immagine della fotocamera.
+La v0.2 usa soglie adattive più piccole, prova più posizioni della cornice, piccole correzioni geometriche e supporta immagini con esposizione alterata. Sono stati aggiunti test di regressione per codici da 120px in un video 800×600.
+
+Nella scheda **Scansiona** sono ora disponibili:
+- conteggio letture, cornici riconosciute, intestazioni e CRC, nuovi frammenti e ripetizioni;
+- **Salva fotogramma** (fotografia della camera in PNG, utile per il debug);
+- **Esporta debug.log** (diagnostica tecnica senza includere registrazioni video);
+- **Test immagine** per provare singoli PNG/JPG direttamente dal dispositivo;
+- indicazione del numero di frammenti mancanti.
+
+Per il primo test apri su Windows `CodexAnim_TEST_1_FOTOGRAMMA.png` e inquadralo con l'APK: contiene tutto il file di testo in un solo frame. Dopo, prova la GIF di 3 frame e infine un tuo file.
+
+**Aggiornamento Android:** le APK debug di diverse esecuzioni GitHub Actions possono essere firmate con chiavi differenti. Se Android segnala un conflitto o un'app non installabile, **disinstalla CodexAnim precedente** e installa l'APK nuova. La v0.2 ha versionCode 2, ma questo non risolve un cambio della chiave di firma.
+
+
 ## Installa e prova
 
 **APK:** apri [GitHub Actions](https://github.com/Frak89/CodexAnim/actions/workflows/android.yml), scegli l'ultima esecuzione **verde** e scarica l'artefatto **CodexAnim-debug-APK**. All'interno trovi `app-debug.apk`.
