@@ -102,7 +102,11 @@ function tryGrid(im,box,n,rot,shiftX,shiftY,stretch){
  for(let i=0;i<16;i++)symbols[i]=i;
  for(let i=16;i<symbols.length;i++)symbols[i]=classify(loc(Math.floor(i/n),i%n));
  try{return {valid:true,preamble:true,frame:C.decodeFrameSymbols(symbols)}}
- catch(e){return {valid:false,preamble:true,error:e.message}}
+ catch(e){
+   let partial=null;
+   try{const p=C.inspectFrameSymbols(symbols);if(!p.valid)partial=p;}catch(ignore){}
+   return {valid:false,preamble:true,error:e.message,partial};
+ }
 }
 function findFrame(img,bounds,debug){
  const boxes=Array.isArray(bounds)?bounds:(bounds?[bounds]:[]);
@@ -113,7 +117,14 @@ function findFrame(img,bounds,debug){
    for(let rot=0;rot<4;rot++){
      for(const [ox,oy,scale] of [[0,0,1],[-.12,0,1],[.12,0,1],[0,-.12,1],[0,.12,1]]){
        const r=tryGrid(img,box,n,rot,ox,oy,scale);
-       if(r?.preamble&&debug){debug.headers=(debug.headers||0)+1;debug.phase=r.valid?'decoded':'checksum';if(!r.valid)debug.lastError=r.error;}
+       if(r?.preamble&&debug){
+         debug.headers=(debug.headers||0)+1;
+         debug.phase=r.valid?'decoded':'checksum';
+         if(!r.valid){
+           debug.lastError=r.error;
+           if(r.partial && !debug.partial)debug.partial=r.partial;
+         }
+       }
        if(r?.valid){if(debug){debug.grid=n;debug.rotation=rot*90;debug.phase='decoded';}return r.frame;}
      }
    }
