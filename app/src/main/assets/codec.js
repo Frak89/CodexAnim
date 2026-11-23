@@ -69,6 +69,26 @@ function decodeFrameSymbols(syms){
   assert(crc32(chunk)===r32(data,30),"Frame checksum mismatch");
   return {version:1,flags:data[5],grid,session:r32(data,8),seq,count,totalSize,crc:r32(data,26),chunk};
 }
+/* Parse an otherwise structurally valid optical frame even when its payload CRC fails.
+   This exposes only a *candidate*: data must NEVER be saved without CRC verification. */
+function inspectFrameSymbols(syms){
+  const grid=Math.round(Math.sqrt(syms.length)),cp=capacity(grid);
+  if(grid*grid!==syms.length)throw Error("Not a square grid");
+  const data=new Uint8Array(Math.floor((syms.length-16)/2));
+  for(let i=0;i<data.length;i++)data[i]=(syms[16+2*i]<<4)|syms[17+2*i];
+  assert(MAGIC.every((b,i)=>data[i]===b)&&data[4]===1&&data[6]===grid,"Invalid frame header");
+  const seq=r32(data,12),count=r32(data,16),totalSize=r32(data,20),n=r16(data,24),flags=data[5];
+  assert(count>0&&count<=10000&&seq<count&&totalSize<=100*1024*1024,
+   "Out-of-bounds frame header");
+  assert(totalSize<=count*cp&&totalSize>(count-1)*cp,"Inconsistent payload dimensions");
+  assert(n===Math.min(cp,totalSize-seq*cp),"Inconsistent chunk length");
+  assert((flags&~3)===0&&Boolean(flags&1)===(seq===0)&&Boolean(flags&2)===(seq===count-1),
+   "Inconsistent START/END flags");
+  const chunk=data.slice(HEADER_BYTES,HEADER_BYTES+n);
+  const expectedCrc=r32(data,30);
+  return {version:1,grid,seq,count,totalSize,flags,session:r32(data,8),
+    crc:r32(data,26),chunk,expectedCrc,valid:crc32(chunk)===expectedCrc};
+}
 function packCimg({stream,filename="file.bin",mime="application/octet-stream",grid=32,width=512,height=512,fps=3}){
   capacity(grid);
   const meta=te.encode(JSON.stringify({version:1,filename,mime,grid,width,height,fps,streamCrc32:crc32(stream)}));
@@ -84,6 +104,6 @@ function unpackCimg(raw){
   const stream=raw.slice(13+ml);assert(crc32(stream)===meta.streamCrc32,".cimg integrity check failed");
   return {meta,stream};
 }
-const api={PALETTE,HEADER_BYTES,capacity,crc32,encodeInner,decodeInner,encodeFrame,decodeFrameSymbols,packCimg,unpackCimg,concat,r32,u32};
+const api={PALETTE,HEADER_BYTES,capacity,crc32,encodeInner,decodeInner,encodeFrame,decodeFrameSymbols,inspectFrameSymbols,packCimg,unpackCimg,concat,r32,u32};
 root.CIMG=api;if(typeof module!=="undefined"&&module.exports)module.exports=api;
 })(globalThis);
