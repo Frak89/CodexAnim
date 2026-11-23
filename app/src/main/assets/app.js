@@ -21,8 +21,10 @@ function renderDiagnostics(){
  " | header: "+scanStats.header+" | CRC errati: "+scanStats.checksum+
  " | validi: "+scanStats.decoded+" | nuovi: "+scanStats.unique+
  " | ripetuti: "+scanStats.duplicate+
+ " | salti rapidi: "+(scanStats.fastSkipped||0)+
  " | riparati CRC: "+temporal.getStats().repaired+
  " | in memoria: "+temporal.getStats().cached+
+ (d.control?"\nContorno v0.4: frammento #"+(d.control.seq+1)+"/"+d.control.count+" · CRC16 valido":"")+
  "\nFase: "+(d.phase||"in attesa")+" | candidati: "+(d.candidates||0)+
  (d.grid?" | griglia "+d.grid+" | rotazione "+d.rotation+"°":"")+
  (d.lastError?"\nUltimo errore: "+d.lastError:"")+
@@ -239,6 +241,7 @@ function resetScan(){
   session=null;recovered=null;$("btnRecovered").disabled=true;$("progressFill").style.width="0%";
   for(const k of Object.keys(scanStats))scanStats[k]=0;
   scanLog.length=0;lastDiagnostics=null;temporal.clear();
+  globalThis.CimgScanner.trackerReset();
   showScan("Ricezione azzerata. Inquadra il codice animato.");logScan("reset");renderDiagnostics();
 }
 async function receive(frame){
@@ -277,11 +280,18 @@ async function scanTick(){
     scanCtx.drawImage(v,0,0,scanCanvas.width,scanCanvas.height);
     const im=scanCtx.getImageData(0,0,scanCanvas.width,scanCanvas.height);
     const diag={};scanStats.samples++;
-    const frame=globalThis.CimgScanner.decodeImageData(im,diag);
+    const frame=globalThis.CimgScanner.decodeImageData(im,diag,ctrl=>
+      !!session&&session.session===ctrl.session&&session.count===ctrl.count&&!!session.parts[ctrl.seq]);
+    if(diag.fastSkip){
+      scanStats.duplicate++;scanStats.fastSkipped=(scanStats.fastSkipped||0)+1;
+    }
     lastDiagnostics=diag;
     if(diag.candidates)scanStats.border++;
     if(diag.headers)scanStats.header++;
     if(diag.phase==="checksum")scanStats.checksum++;
+    if(diag.control&&diag.control.seq!==undefined&&diag.phase!=="duplicate"){
+      if(diag.control.contrast<35)logScan("control contrast low","rail="+diag.control.contrast);
+    }
     if(frame){
       scanStats.decoded++;
       await receive(frame);
