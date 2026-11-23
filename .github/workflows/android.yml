@@ -24,7 +24,7 @@ jobs:
           node --check app/src/main/assets/scanner.js
           node --check app/src/main/assets/app.js
           node --check app/src/main/assets/gif.js
-          node --test tests/protocol.test.cjs
+          node --test tests/*.test.cjs
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
       - name: Upload installable APK
