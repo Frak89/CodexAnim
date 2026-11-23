@@ -30,3 +30,5 @@ button.primary{background:linear-gradient(125deg,#00a890,#046b7c);color:white;bo
 @media(max-width:520px){header small{width:100%;font-size:8px}.status{font-size:9px}header strong{font-size:16px}.actions>button{min-width:40%;font-size:12px}.screen canvas{max-height:54vh}}
 
 .autoopt{display:flex;gap:9px;align-items:center;color:var(--a);background:#0c2729;border:1px solid #2e655e;padding:10px 12px;border-radius:8px;font-size:12px}.autoopt input{accent-color:var(--a);width:19px;height:19px;flex-shrink:0}
+
+.diagnostics{font:12px/1.6 ui-monospace,SFMono-Regular,monospace;color:#c7dde8;background:#111827;border:1px solid var(--line);padding:10px;border-radius:8px;white-space:pre-wrap;overflow-wrap:anywhere}
