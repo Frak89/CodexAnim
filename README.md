@@ -2,6 +2,29 @@
 
 Codice ottico **animato a 16 colori** per trasferire file, senza Wi-Fi né Bluetooth, da un monitor Windows alla fotocamera Android. Prototipo sperimentale offline.
 
+## v0.3 — fotogrammi rumorosi e GIF a 30 FPS con tenuta temporale
+
+**Diagnostica reale:** 1/202 frame validi, 369 intestazioni rilevate e CRC errati
+quando il file era mostrato a 30 FPS senza ripetizione. La camera trova il
+codice, ma i fotogrammi cambiano troppo presto e producono letture miste.
+
+- **Recupero temporale:** il decoder raccoglie più copie CRC-errate di uno stesso
+  frammento con intestazione valida; vota sui byte, ma **accetta soltanto**
+  se il CRC32 originale del frammento torna corretto. Questo non è FEC di
+  erasure e non può ricostruire frammenti mai osservati.
+- **Nuovo export GIF**: scegli 30 FPS e ripetizioni temporali 10×. La GIF ha
+  ~30 frame GIF al secondo, ma cambia **il codice dati ~3 volte al secondo**.
+  Le ripetizioni sono GIF transparenti 1×1 e non ricomprimono la matrice.
+- Il player sul monitor applica lo stesso parametro ripetizioni.
+- L'app mostra **CRC riparati** e **pacchetti in memoria** nella diagnostica.
+
+**Consiglio pratico:** 56×56, immagine almeno 768×768, FPS 30 e ripetizioni
+10×. Mantieni il monitor a pieno schermo e il telefono perpendicolare. Se
+molti pacchetti sono ancora errati, usa 32×32 o 40×40 e 2–3 FPS.
+
+La dicitura `Oltre 10.000 fotogrammi` è un limite del generatore per file
+troppo grandi nella griglia selezionata: non è un errore del decoder/scanner.
+
 ## v0.2 — correzione scanner e diagnostica (23 novembre 2026)
 
 La v0.1 poteva ignorare la matrice quando occupava meno del 25% dell'immagine della fotocamera.
