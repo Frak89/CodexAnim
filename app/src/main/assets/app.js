@@ -37,7 +37,8 @@ function cfg(){
   const grid=Number($("grid").value),fps=Number($("fps").value);
   const width=Math.round(Math.max(128,Math.min(1920,Number($("w").value)||512)));
   const height=Math.round(Math.max(128,Math.min(1920,Number($("h").value)||512)));
-  return {grid,fps,width,height,session:0};
+  const repeatEach=Number($("repeatEach").value)||1;
+  return {grid,fps,repeatEach,width,height,session:0};
 }
 function optimizeGrid(){
   const el=$("autoGrid");if(!el||!el.checked){$("grid").disabled=false;return}
@@ -48,21 +49,22 @@ function optimizeGrid(){
   const eligible=gridChoices.filter(n=>n<=physicalMax);
   const candidates=eligible.length?eligible:[16];
   const seconds=Number($("duration").value),fps=Number($("fps").value);
-  const desiredBytes=source?Math.ceil(source.stream.length/(seconds*fps)):C.capacity(32);
+  const repeated=Number($("repeatEach").value)||1;
+  const desiredBytes=source?Math.ceil(source.stream.length/(seconds*fps/repeated)):C.capacity(32);
   const chosen=candidates.find(n=>C.capacity(n)>=desiredBytes)||candidates[candidates.length-1];
   $("grid").value=chosen;
 }
 function capacityInfo(){
   optimizeGrid();
   const o=cfg(),cp=C.capacity(o.grid),secs=Number($("duration").value);
-  const ideal=cp*o.fps*secs,n=source?Math.max(1,Math.ceil(source.stream.length/cp)):0;
+  const ideal=cp*o.fps*secs/o.repeatEach,n=source?Math.max(1,Math.ceil(source.stream.length/cp)):0;
   const modulePx=Math.floor(Math.min(o.width,o.height)/(o.grid+6));
   const caution=modulePx<7?"<strong>ATTENZIONE: celle troppo piccole per una scansione affidabile.</strong>":"Dimensione cella "+modulePx+" px; suggeriti almeno 7–10 px sul file esportato.";
   const el=$("stats");
-  el.innerHTML="<strong>"+cp+" byte utili/fotogramma</strong> · "+o.grid+"×"+o.grid+" · "+o.fps+" FPS"+
+  el.innerHTML="<strong>"+cp+" byte utili/fotogramma</strong> · "+o.grid+"×"+o.grid+" · "+o.fps+" FPS · "+o.repeatEach+" ripetizioni"+
     "<br>Capacità teorica in "+secs+" s: <strong>"+fmt(ideal)+"</strong> (prima della compressione)"+
     "<br>"+(source?"File compresso: <strong>"+fmt(source.stream.length)+"</strong> → "+n+" fotogrammi → "+
-       (n/o.fps).toFixed(1)+" s per ciclo":"Seleziona un file per stimare il numero di fotogrammi")+
+       (n*o.repeatEach/o.fps).toFixed(1)+" s per ciclo":"Seleziona un file per stimare il numero di fotogrammi")+
     "<br>"+caution+"<br><small>La capacità reale dipende da riflessi, messa a fuoco, fotogrammi persi e compressione.</small>";
 }
 async function compressed(bytes){
@@ -84,6 +86,7 @@ async function openInput(file){
       const box=C.unpackCimg(raw),decoded=C.decodeInner(await inflated(box.stream));
       source={stream:box.stream,filename:decoded.filename,mime:decoded.mime,originalSize:decoded.bytes.length};
       $("grid").value=box.meta.grid;$("w").value=box.meta.width;$("h").value=box.meta.height;$("fps").value=box.meta.fps;
+      $("repeatEach").value=box.meta.repeatEach||1;
     }else{
       const inner=C.encodeInner(raw,file.name,file.type||"application/octet-stream");
       source={stream:await compressed(inner),filename:file.name,mime:file.type||"application/octet-stream",originalSize:raw.length};
@@ -127,11 +130,13 @@ function drawFrame(idx){
 function stopPlay(){if(playTimer)clearInterval(playTimer);playTimer=null}
 function play(){
   if(!frames.length)return;stopPlay();frameNumber=0;drawFrame(0);
+  let repeatTick=0;
   playTimer=setInterval(()=>{
-    frameNumber++;
+    repeatTick++;
+    frameNumber=Math.floor(repeatTick/pack.repeatEach);
     if(frameNumber>=frames.length){
       if($("repeat").value==="0"){stopPlay();frameNumber=frames.length-1;return}
-      frameNumber=0;
+      frameNumber=0;repeatTick=0;
     }
     drawFrame(frameNumber);
   },Math.round(1000/pack.fps));
@@ -331,7 +336,7 @@ async function saveRecovered(){
 }
 function wire(){
   $("fileInput").addEventListener("change",e=>openInput(e.target.files[0]));
-  for(const id of ["grid","fps","w","h","duration","autoGrid"])$(id).addEventListener("change",()=>{stopPlay();capacityInfo();if(frames.length)message("Configurazione cambiata: premi «Prepara sequenza» per applicarla.")});
+  for(const id of ["grid","fps","repeatEach","w","h","duration","autoGrid"])$(id).addEventListener("change",()=>{stopPlay();capacityInfo();if(frames.length)message("Configurazione cambiata: premi «Prepara sequenza» per applicarla.")});
   $("btnGenerate").onclick=prepare;$("btnPlay").onclick=play;$("btnStop").onclick=stopPlay;
   $("btnFull").onclick=()=>{const box=document.querySelector(".screen");if(box.requestFullscreen)box.requestFullscreen().catch(e=>message(e.message,true));else message("Fullscreen non disponibile",true)};
   $("btnCimg").onclick=saveCimg;$("btnGif").onclick=saveGif;$("btnPng").onclick=savePng;$("btnWebm").onclick=saveWebm;
