@@ -11,7 +11,7 @@
   <div class="intro"><h1>File → codice animato</h1><p>Trasferisci qualsiasi file con fotogrammi colorati. Il ricevitore ricostruisce i byte originali con verifica CRC32.</p></div>
   <label class="filepick">① Carica file oppure .cimg <input id="fileInput" type="file"></label>
   <div id="selectedFile" class="muted">Nessun file selezionato</div>
-  <label class="autoopt"><input id="autoGrid" type="checkbox" checked> Ottimizza automaticamente la densità della matrice in base a pixel, FPS e dimensione del file (disattivabile per scegliere manualmente).</label><div class="controls">
+  <label class="autoopt"><input id="autoGrid" type="checkbox" checked> Ottimizza automaticamente la densità della matrice in base a pixel, FPS e dimensione del file (disattivabile per scegliere manualmente).</label><label class="autoopt"><input id="frameContour" type="checkbox" checked> Cornice di controllo v0.4: bit su contorno fisso (SYNC, START/END, sessione, numero, CRC16). Le celle interne trasmettono il file.</label><div class="controls">
     <label>Matrice colori <select id="grid">
       <option value="16">16 × 16</option><option value="24">24 × 24</option>
       <option value="32" selected>32 × 32</option><option value="40">40 × 40</option>
@@ -71,5 +71,5 @@
 </section>
 <div id="message" role="status" aria-live="polite"></div>
 </main>
-<script src="codec.js"></script><script src="scanner.js"></script><script src="recovery.js"></script><script src="gif.js"></script><script src="app.js"></script>
+<script src="codec.js"></script><script src="contour.js"></script><script src="scanner.js"></script><script src="recovery.js"></script><script src="gif.js"></script><script src="app.js"></script>
 </body></html>
