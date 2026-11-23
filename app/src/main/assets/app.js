@@ -15,7 +15,21 @@ function cfg(){
   const height=Math.round(Math.max(128,Math.min(1920,Number($("h").value)||512)));
   return {grid,fps,width,height,session:0};
 }
+function optimizeGrid(){
+  const el=$("autoGrid");if(!el||!el.checked){$("grid").disabled=false;return}
+  $("grid").disabled=true;
+  const w=Math.max(128,Math.min(1920,Number($("w").value)||512));
+  const h=Math.max(128,Math.min(1920,Number($("h").value)||512));
+  const physicalMax=Math.floor(Math.min(w,h)/12)-6;
+  const eligible=gridChoices.filter(n=>n<=physicalMax);
+  const candidates=eligible.length?eligible:[16];
+  const seconds=Number($("duration").value),fps=Number($("fps").value);
+  const desiredBytes=source?Math.ceil(source.stream.length/(seconds*fps)):C.capacity(32);
+  const chosen=candidates.find(n=>C.capacity(n)>=desiredBytes)||candidates[candidates.length-1];
+  $("grid").value=chosen;
+}
 function capacityInfo(){
+  optimizeGrid();
   const o=cfg(),cp=C.capacity(o.grid),secs=Number($("duration").value);
   const ideal=cp*o.fps*secs,n=source?Math.max(1,Math.ceil(source.stream.length/cp)):0;
   const modulePx=Math.floor(Math.min(o.width,o.height)/(o.grid+6));
@@ -42,6 +56,7 @@ async function openInput(file){
   try{
     const raw=new Uint8Array(await file.arrayBuffer());
     if(file.name.toLowerCase().endsWith(".cimg")){
+      $("autoGrid").checked=false;
       const box=C.unpackCimg(raw),decoded=C.decodeInner(await inflated(box.stream));
       source={stream:box.stream,filename:decoded.filename,mime:decoded.mime,originalSize:decoded.bytes.length};
       $("grid").value=box.meta.grid;$("w").value=box.meta.width;$("h").value=box.meta.height;$("fps").value=box.meta.fps;
@@ -217,6 +232,14 @@ function detectBounds(image){
       if(s>score){score=s;best={x:(a.x+b.x)/2,y:a.y,width:span,height:dy}}
     }
   }
+  if(best){
+    // Find the first dark pixel of the upper border rather than its midline.
+    // y positions returned by the scan are an arbitrary row within the border.
+    const xmid=Math.max(0,Math.min(w-1,Math.floor(best.x+best.width/2)));
+    let top=Math.floor(best.y);
+    while(top>0&&dark(d,4*((top-1)*w+xmid)))top--;
+    best.y=top;
+  }
   return best;
 }
 function sampleRGB(img,x,y,delta){
@@ -228,9 +251,9 @@ function sampleRGB(img,x,y,delta){
   return [rr/n,gg/n,bb/n];
 }
 function findFrame(img,bounds){
-  const {x,y,width:side,height:sideY}=bounds;
+  const {x,y,width:side}=bounds;
   for(const n of gridChoices){
-    const sx=side/(n+2),sy=sideY/(n+2);
+    const sx=side/(n+2),sy=sx;
     if(sx<2.2||sy<2.2)continue;
     const delta=Math.max(0,Math.floor(Math.min(sx,sy)*.12));
     // 0, 90, 180, 270 degrees clockwise; swatch row doubles as orientation cue.
@@ -309,7 +332,7 @@ async function saveRecovered(){
 }
 function wire(){
   $("fileInput").addEventListener("change",e=>openInput(e.target.files[0]));
-  for(const id of ["grid","fps","w","h","duration"])$(id).addEventListener("change",()=>{stopPlay();capacityInfo();if(frames.length)message("Configurazione cambiata: premi «Prepara sequenza» per applicarla.")});
+  for(const id of ["grid","fps","w","h","duration","autoGrid"])$(id).addEventListener("change",()=>{stopPlay();capacityInfo();if(frames.length)message("Configurazione cambiata: premi «Prepara sequenza» per applicarla.")});
   $("btnGenerate").onclick=prepare;$("btnPlay").onclick=play;$("btnStop").onclick=stopPlay;
   $("btnFull").onclick=()=>{const box=document.querySelector(".screen");if(box.requestFullscreen)box.requestFullscreen().catch(e=>message(e.message,true));else message("Fullscreen non disponibile",true)};
   $("btnCimg").onclick=saveCimg;$("btnGif").onclick=saveGif;$("btnPng").onclick=savePng;$("btnWebm").onclick=saveWebm;
