@@ -38,14 +38,14 @@ function cfg(){
   const width=Math.round(Math.max(128,Math.min(1920,Number($("w").value)||512)));
   const height=Math.round(Math.max(128,Math.min(1920,Number($("h").value)||512)));
   const repeatEach=Number($("repeatEach").value)||1;
-  return {grid,fps,repeatEach,width,height,session:0};
+  return {grid,fps,repeatEach,width,height,contour:$("frameContour").checked,session:0};
 }
 function optimizeGrid(){
   const el=$("autoGrid");if(!el||!el.checked){$("grid").disabled=false;return}
   $("grid").disabled=true;
   const w=Math.max(128,Math.min(1920,Number($("w").value)||512));
   const h=Math.max(128,Math.min(1920,Number($("h").value)||512));
-  const physicalMax=Math.floor(Math.min(w,h)/12)-6;
+  const physicalMax=Math.floor(Math.min(w,h)/12)-($("frameContour").checked?10:6);
   const eligible=gridChoices.filter(n=>n<=physicalMax);
   const candidates=eligible.length?eligible:[16];
   const seconds=Number($("duration").value),fps=Number($("fps").value);
@@ -58,7 +58,7 @@ function capacityInfo(){
   optimizeGrid();
   const o=cfg(),cp=C.capacity(o.grid),secs=Number($("duration").value);
   const ideal=cp*o.fps*secs/o.repeatEach,n=source?Math.max(1,Math.ceil(source.stream.length/cp)):0;
-  const modulePx=Math.floor(Math.min(o.width,o.height)/(o.grid+6));
+  const modulePx=Math.floor(Math.min(o.width,o.height)/(o.grid+(o.contour?10:6)));
   const caution=modulePx<7?"<strong>ATTENZIONE: celle troppo piccole per una scansione affidabile.</strong>":"Dimensione cella "+modulePx+" px; suggeriti almeno 7–10 px sul file esportato.";
   const el=$("stats");
   el.innerHTML="<strong>"+cp+" byte utili/fotogramma</strong> · "+o.grid+"×"+o.grid+" · "+o.fps+" FPS · "+o.repeatEach+" ripetizioni"+
@@ -87,6 +87,7 @@ async function openInput(file){
       source={stream:box.stream,filename:decoded.filename,mime:decoded.mime,originalSize:decoded.bytes.length};
       $("grid").value=box.meta.grid;$("w").value=box.meta.width;$("h").value=box.meta.height;$("fps").value=box.meta.fps;
       $("repeatEach").value=box.meta.repeatEach||1;
+      $("frameContour").checked=!!box.meta.contour;
     }else{
       const inner=C.encodeInner(raw,file.name,file.type||"application/octet-stream");
       source={stream:await compressed(inner),filename:file.name,mime:file.type||"application/octet-stream",originalSize:raw.length};
@@ -117,6 +118,9 @@ function drawFrame(idx){
   const o=pack,syms=frames[idx],n=o.grid,w=o.width,h=o.height;
   if(canvas.width!==w)canvas.width=w;if(canvas.height!==h)canvas.height=h;
   const unit=Math.floor(Math.min(w,h)/(n+6)),ox=Math.floor((w-unit*(n+6))/2),oy=Math.floor((h-unit*(n+6))/2);
+  if(o.contour){globalThis.CimgContour.paintCanvas(ctx,syms,w,h,C.decodeFrameSymbols(syms));
+   const kind=frames.length===1?"CODE_START + CODE_END":idx===0?"CODE_START":idx===frames.length-1?"CODE_END":"DATA";
+   $("frameBadge").textContent=kind+" · "+(idx+1)+"/"+frames.length;return;}
   if(unit<1)throw Error("Image too small");
   ctx.fillStyle="#ffffff";ctx.fillRect(0,0,w,h);
   ctx.fillStyle="#101820";ctx.fillRect(ox+2*unit,oy+2*unit,(n+2)*unit,(n+2)*unit);
@@ -342,7 +346,7 @@ function wire(){
       message("30 FPS selezionati: ripetizione 10× per mantenere ogni matrice leggibile ~330 ms.");
     }
   });
-  for(const id of ["grid","fps","repeatEach","w","h","duration","autoGrid"])$(id).addEventListener("change",()=>{stopPlay();capacityInfo();if(frames.length)message("Configurazione cambiata: premi «Prepara sequenza» per applicarla.")});
+  for(const id of ["grid","fps","repeatEach","w","h","duration","autoGrid","frameContour"])$(id).addEventListener("change",()=>{stopPlay();capacityInfo();if(frames.length)message("Configurazione cambiata: premi «Prepara sequenza» per applicarla.")});
   $("btnGenerate").onclick=prepare;$("btnPlay").onclick=play;$("btnStop").onclick=stopPlay;
   $("btnFull").onclick=()=>{const box=document.querySelector(".screen");if(box.requestFullscreen)box.requestFullscreen().catch(e=>message(e.message,true));else message("Fullscreen non disponibile",true)};
   $("btnCimg").onclick=saveCimg;$("btnGif").onclick=saveGif;$("btnPng").onclick=savePng;$("btnWebm").onclick=saveWebm;
