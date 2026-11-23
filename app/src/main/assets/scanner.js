@@ -166,8 +166,15 @@ function decodeImageData(img,debug,skipKnown){
      return r.frame;
    }
    if(debug&&r?.partial){debug.partial=r.partial;debug.phase='checksum';debug.headers=1;debug.lastError=r.error;}
-   trackerMisses++;
-   if(trackerMisses%4!==0)return null;
+   // If the previously tracked square is no longer in view, immediately
+   // reacquire. Only defer expensive full scans when a plausible CIMG header
+   // is still present but its color payload has a CRC error.
+   if(r?.preamble){
+     trackerMisses++;
+     if(trackerMisses%4!==0)return null;
+   }else{
+     trackerMisses=0;tracker=null;
+   }
  }
  const boxes=detectCandidates(img);
  const frame=findFrame(img,boxes,debug);
