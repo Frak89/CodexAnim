@@ -204,87 +204,6 @@ function resetScan(){
   session=null;recovered=null;$("btnRecovered").disabled=true;$("progressFill").style.width="0%";
   showScan("Ricezione azzerata. Inquadra il codice animato.");
 }
-function dark(d,p){return d[p]<65&&d[p+1]<75&&d[p+2]<85}
-/* Locate top and bottom border (near-fronto-parallel code on a monitor).
-   Dark uninterrupted border distinguishes the code from its colorful matrix. */
-function detectBounds(image){
-  const {data:d,width:w,height:h}=image,rows=[],xmin=Math.floor(w*.04),xmax=Math.floor(w*.96);
-  const minRun=Math.max(40,Math.floor(Math.min(w,h)*.25));
-  for(let y=Math.floor(h*.04);y<Math.floor(h*.96);y+=2){
-    let st=-1,best=-1,bx=0;
-    for(let x=xmin;x<xmax;x++){
-      const isDark=dark(d,4*(y*w+x));
-      if(isDark){if(st<0)st=x}
-      else if(st>=0){if(x-st>best){best=x-st;bx=st}st=-1}
-    }
-    if(st>=0&&xmax-st>best){best=xmax-st;bx=st}
-    if(best>=minRun)rows.push({x:bx,y,width:best});
-  }
-  if(!rows.length)return null;
-  let best=null,score=-1;
-  for(let i=0;i<rows.length;i++){
-    const a=rows[i];
-    for(let j=i+1;j<rows.length;j++){
-      const b=rows[j],dy=b.y-a.y,span=(a.width+b.width)/2;
-      if(dy<span*.76||dy>span*1.18)continue;
-      if(Math.abs(a.x-b.x)>span*.055||Math.abs(a.width-b.width)>span*.085)continue;
-      const s=span-Math.abs(dy-span)*1.5;
-      if(s>score){score=s;best={x:(a.x+b.x)/2,y:a.y,width:span,height:dy}}
-    }
-  }
-  if(best){
-    // Find the first dark pixel of the upper border rather than its midline.
-    // y positions returned by the scan are an arbitrary row within the border.
-    const xmid=Math.max(0,Math.min(w-1,Math.floor(best.x+best.width/2)));
-    let top=Math.floor(best.y);
-    while(top>0&&dark(d,4*((top-1)*w+xmid)))top--;
-    best.y=top;
-  }
-  return best;
-}
-function sampleRGB(img,x,y,delta){
-  const {data:d,width:w,height:h}=img;let rr=0,gg=0,bb=0,n=0;
-  for(const [dx,dy] of [[0,0],[-delta,0],[delta,0],[0,-delta],[0,delta]]){
-    const xx=Math.max(0,Math.min(w-1,Math.round(x+dx))),yy=Math.max(0,Math.min(h-1,Math.round(y+dy))),p=4*(yy*w+xx);
-    rr+=d[p];gg+=d[p+1];bb+=d[p+2];n++;
-  }
-  return [rr/n,gg/n,bb/n];
-}
-function findFrame(img,bounds){
-  const {x,y,width:side}=bounds;
-  for(const n of gridChoices){
-    const sx=side/(n+2),sy=sx;
-    if(sx<2.2||sy<2.2)continue;
-    const delta=Math.max(0,Math.floor(Math.min(sx,sy)*.12));
-    // 0, 90, 180, 270 degrees clockwise; swatch row doubles as orientation cue.
-    for(let rot=0;rot<4;rot++){
-      const loc=(r,c)=>{
-        let xx=c,yy=r;
-        if(rot===1){xx=n-1-r;yy=c}
-        else if(rot===2){xx=n-1-c;yy=n-1-r}
-        else if(rot===3){xx=r;yy=n-1-c}
-        return sampleRGB(img,x+(xx+1.5)*sx,y+(yy+1.5)*sy,delta);
-      };
-      const swatches=Array.from({length:16},(_,i)=>loc(0,i));
-      const code=rgb=>{
-        let k=0,score=Infinity;
-        for(let j=0;j<16;j++){
-          const a=swatches[j];const dist=(rgb[0]-a[0])**2+(rgb[1]-a[1])**2+(rgb[2]-a[2])**2;
-          if(dist<score){score=dist;k=j}
-        }return k;
-      };
-      const probe=[];
-      for(let z=16;z<16+16;z++){probe.push(code(loc(Math.floor(z/n),z%n)))}
-      const expected=[4,3,4,9,4,13,4,7,0,1]; // "CIMG" and version byte
-      if(!expected.every((v,i)=>probe[i]===v))continue;
-      const symbols=new Uint8Array(n*n);
-      for(let k=0;k<16;k++)symbols[k]=k;
-      for(let k=16;k<n*n;k++)symbols[k]=code(loc(Math.floor(k/n),k%n));
-      try{return C.decodeFrameSymbols(symbols)}catch(e){/* next candidate */}
-    }
-  }
-  return null;
-}
 async function receive(frame){
   if(frame.count>10000||frame.totalSize>100*1024*1024)return;
   const id=[frame.session,frame.crc,frame.count,frame.totalSize].join(":");
@@ -318,10 +237,8 @@ async function scanTick(){
     scanCanvas.width=Math.floor(v.videoWidth*factor);scanCanvas.height=Math.floor(v.videoHeight*factor);
     scanCtx.drawImage(v,0,0,scanCanvas.width,scanCanvas.height);
     const im=scanCtx.getImageData(0,0,scanCanvas.width,scanCanvas.height);
-    const bounds=detectBounds(im);if(bounds){
-      const frame=findFrame(im,bounds);
-      if(frame)await receive(frame);
-    }
+    const frame=globalThis.CimgScanner.decodeImageData(im);
+    if(frame)await receive(frame);
   }catch(e){/* bad individual image; keep scanning */}
   finally{scanBusy=false}
 }
