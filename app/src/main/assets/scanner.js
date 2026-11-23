@@ -1,92 +1,131 @@
-/* CodexAnim optical receiver v1. Near-fronto-parallel display detection.
- * Pure functions: testable without camera/DOM in Node.
+/* CodexAnim optical receiver v1.1 — backwards compatible with CIMG v1 frames.
+ * Detects multiple square-border hypotheses, rejects bad CRC32, supports rotations
+ * and reports failures instead of silently dropping unknown camera images.
  */
 (function(root){
-"use strict";
+'use strict';
 const C=root.CIMG;
 const GRIDS=[16,24,32,40,48,56,64,72,80,88,96];
-function dark(d,p){return d[p]<65&&d[p+1]<75&&d[p+2]<85}
-function detectBounds(image){
-  const {data:d,width:w,height:h}=image,rows=[],xmin=Math.floor(w*.04),xmax=Math.floor(w*.96);
-  const minRun=Math.max(40,Math.floor(Math.min(w,h)*.25));
-  for(let y=Math.floor(h*.04);y<Math.floor(h*.96);y+=2){
-    let st=-1,best=-1,bx=0;
-    for(let x=xmin;x<xmax;x++){
-      const isDark=dark(d,4*(y*w+x));
-      if(isDark){if(st<0)st=x}
-      else if(st>=0){if(x-st>best){best=x-st;bx=st}st=-1}
-    }
-    if(st>=0&&xmax-st>best){best=xmax-st;bx=st}
-    if(best>=minRun)rows.push({x:bx,y,width:best});
-  }
-  if(!rows.length)return null;
-  let best=null,score=-1;
-  for(let i=0;i<rows.length;i++){
-    const a=rows[i];
-    for(let j=i+1;j<rows.length;j++){
-      const b=rows[j],dy=b.y-a.y,span=(a.width+b.width)/2;
-      if(dy<span*.76||dy>span*1.18)continue;
-      if(Math.abs(a.x-b.x)>span*.055||Math.abs(a.width-b.width)>span*.085)continue;
-      const s=span-Math.abs(dy-span)*1.5;
-      if(s>score){score=s;best={x:(a.x+b.x)/2,y:a.y,width:span,height:dy}}
-    }
-  }
-  if(best){
-    const xmid=Math.max(0,Math.min(w-1,Math.floor(best.x+best.width/2)));
-    let top=Math.floor(best.y);
-    while(top>0&&dark(d,4*((top-1)*w+xmid)))top--;
-    best.y=top;
-  }
-  return best;
+const MAGIC_NIBBLES=[4,3,4,9,4,13,4,7,0,1];
+function nearDark(d,p){return d[p]<125&&d[p+1]<125&&d[p+2]<135}
+function detectCandidates(img){
+ const {data:d,width:w,height:h}=img;
+ if(w<80||h<80||d.length<w*h*4)return [];
+ const threshold=Math.max(26,Math.round(Math.min(w,h)*.085));
+ const x0=Math.max(0,Math.floor(w*.02)),x1=Math.min(w,Math.ceil(w*.98));
+ const rows=[];
+ for(let y=Math.floor(h*.02);y<Math.floor(h*.98);y+=2){
+   let start=-1;
+   const accept=end=>{
+     if(start<0)return;
+     if(end-start>=threshold)rows.push({x:start,y,width:end-start});
+     start=-1;
+   };
+   for(let x=x0;x<x1;x++){
+     if(nearDark(d,4*(y*w+x))){if(start<0)start=x;}
+     else accept(x);
+   }
+   accept(x1);
+ }
+ if(!rows.length)return [];
+ rows.sort((a,b)=>b.width-a.width);
+ const selected=[];
+ for(const r of rows){
+   if(selected.length>=110)break;
+   if(selected.some(v=>Math.abs(v.y-r.y)<3&&Math.abs(v.x-r.x)<3&&Math.abs(v.width-r.width)<4))continue;
+   selected.push(r);
+ }
+ selected.sort((a,b)=>a.y-b.y);
+ const boxes=[];
+ for(let i=0;i<selected.length;i++)for(let j=i+1;j<selected.length;j++){
+   const a=selected[i],b=selected[j],width=(a.width+b.width)/2,dy=b.y-a.y;
+   if(dy<width*.83||dy>width*1.17)continue;
+   if(Math.abs(a.x-b.x)>width*.09||Math.abs(a.width-b.width)>width*.1)continue;
+   const left=(a.x+b.x)*.5,top=a.y,side=width;
+   const edge=Math.max(1,Math.round(side/68));let passed=0;
+   for(const ry of [.17,.36,.64,.83]){
+     const yy=Math.max(0,Math.min(h-1,Math.round(top+ry*side)));
+     const lx=Math.max(0,Math.min(w-1,Math.round(left+edge)));
+     const rx=Math.max(0,Math.min(w-1,Math.round(left+side-edge-1)));
+     if(nearDark(d,4*(yy*w+lx)))passed++;
+     if(nearDark(d,4*(yy*w+rx)))passed++;
+   }
+   if(passed<5)continue;
+   let y=top;
+   const mx=Math.max(0,Math.min(w-1,Math.round(left+side/2)));
+   while(y>0&&nearDark(d,4*((y-1)*w+mx)))y--;
+   const box={x:left,y,width:side,height:side,score:passed*100+side-Math.abs(dy-width)*2};
+   if(boxes.some(v=>Math.abs(v.x-box.x)<side*.025&&Math.abs(v.y-box.y)<side*.025&&Math.abs(v.width-box.width)<side*.05))continue;
+   boxes.push(box);
+ }
+ boxes.sort((a,b)=>b.score-a.score);
+ return boxes.slice(0,8);
 }
-function sampleRGB(img,x,y,delta){
-  const {data:d,width:w,height:h}=img;let rr=0,gg=0,bb=0;
-  for(const [dx,dy] of [[0,0],[-delta,0],[delta,0],[0,-delta],[0,delta]]){
-    const xx=Math.max(0,Math.min(w-1,Math.round(x+dx))),yy=Math.max(0,Math.min(h-1,Math.round(y+dy))),p=4*(yy*w+xx);
-    rr+=d[p];gg+=d[p+1];bb+=d[p+2];
-  }
-  return [rr/5,gg/5,bb/5];
+function detectBounds(img){return detectCandidates(img)[0]||null;}
+function colorAt(im,x,y,radius){
+ const {data:d,width:w,height:h}=im;
+ let r=0,g=0,b=0;
+ for(const [dx,dy] of [[0,0],[-radius,0],[radius,0],[0,-radius],[0,radius]]){
+   const xx=Math.max(0,Math.min(w-1,Math.round(x+dx)));
+   const yy=Math.max(0,Math.min(h-1,Math.round(y+dy)));
+   const p=4*(yy*w+xx);r+=d[p];g+=d[p+1];b+=d[p+2];
+ }
+ return [r/5,g/5,b/5];
 }
-function findFrame(img,bounds){
-  const {x,y,width:side}=bounds;
+function tryGrid(im,box,n,rot,shiftX,shiftY,stretch){
+ const sx=box.width*stretch/(n+2);
+ if(sx<2.0)return null;
+ const dx=box.x+shiftX*sx,dy=box.y+shiftY*sx;
+ const rad=Math.max(0,Math.floor(sx*.12));
+ const loc=(r,c)=>{
+   let xx=c,yy=r;
+   if(rot===1){xx=n-1-r;yy=c;}
+   else if(rot===2){xx=n-1-c;yy=n-1-r;}
+   else if(rot===3){xx=r;yy=n-1-c;}
+   return colorAt(im,dx+(xx+1.5)*sx,dy+(yy+1.5)*sx,rad);
+ };
+ const swatches=Array.from({length:16},(_,i)=>loc(0,i));
+ const classify=rgb=>{
+   let min=Infinity,best=0;
+   for(let j=0;j<16;j++){
+     const s=swatches[j],dr=rgb[0]-s[0],dg=rgb[1]-s[1],db=rgb[2]-s[2];
+     const cost=dr*dr+dg*dg+db*db;
+     if(cost<min){best=j;min=cost;}
+   }
+   return best;
+ };
+ for(let i=0;i<MAGIC_NIBBLES.length;i++){
+   const k=16+i;
+   if(classify(loc(Math.floor(k/n),k%n))!==MAGIC_NIBBLES[i])return {valid:false,preamble:false};
+ }
+ const symbols=new Uint8Array(n*n);
+ for(let i=0;i<16;i++)symbols[i]=i;
+ for(let i=16;i<symbols.length;i++)symbols[i]=classify(loc(Math.floor(i/n),i%n));
+ try{return {valid:true,preamble:true,frame:C.decodeFrameSymbols(symbols)}}
+ catch(e){return {valid:false,preamble:true,error:e.message}}
+}
+function findFrame(img,bounds,debug){
+ const boxes=Array.isArray(bounds)?bounds:(bounds?[bounds]:[]);
+ if(debug){debug.candidates=boxes.length;debug.phase=boxes.length?'border':'no-border';}
+ for(const box of boxes){
   for(const n of GRIDS){
-    const sx=side/(n+2),sy=sx;
-    if(sx<2.2)continue;
-    const delta=Math.max(0,Math.floor(sx*.12));
-    for(let rot=0;rot<4;rot++){
-      const loc=(r,c)=>{
-        let xx=c,yy=r;
-        if(rot===1){xx=n-1-r;yy=c}
-        else if(rot===2){xx=n-1-c;yy=n-1-r}
-        else if(rot===3){xx=r;yy=n-1-c}
-        return sampleRGB(img,x+(xx+1.5)*sx,y+(yy+1.5)*sy,delta);
-      };
-      const swatches=Array.from({length:16},(_,i)=>loc(0,i));
-      const code=rgb=>{
-        let k=0,score=Infinity;
-        for(let j=0;j<16;j++){
-          const a=swatches[j],dist=(rgb[0]-a[0])**2+(rgb[1]-a[1])**2+(rgb[2]-a[2])**2;
-          if(dist<score){score=dist;k=j}
-        }
-        return k;
-      };
-      const probe=[];
-      for(let z=16;z<32;z++)probe.push(code(loc(Math.floor(z/n),z%n)));
-      const expected=[4,3,4,9,4,13,4,7,0,1];
-      if(!expected.every((v,i)=>probe[i]===v))continue;
-      const symbols=new Uint8Array(n*n);
-      for(let k=0;k<16;k++)symbols[k]=k;
-      for(let k=16;k<n*n;k++)symbols[k]=code(loc(Math.floor(k/n),k%n));
-      try{return C.decodeFrameSymbols(symbols)}catch(e){/* wrong frame/grid/angle */}
-    }
+   if(box.width/(n+2)<2)continue;
+   for(let rot=0;rot<4;rot++){
+     for(const [ox,oy,scale] of [[0,0,1],[-.12,0,1],[.12,0,1],[0,-.12,1],[0,.12,1]]){
+       const r=tryGrid(img,box,n,rot,ox,oy,scale);
+       if(r?.preamble&&debug){debug.headers=(debug.headers||0)+1;debug.phase=r.valid?'decoded':'checksum';if(!r.valid)debug.lastError=r.error;}
+       if(r?.valid){if(debug){debug.grid=n;debug.rotation=rot*90;debug.phase='decoded';}return r.frame;}
+     }
+   }
   }
-  return null;
+ }
+ return null;
 }
-function decodeImageData(image){
-  const bounds=detectBounds(image);
-  return bounds?findFrame(image,bounds):null;
+function decodeImageData(img,debug){
+ if(debug){debug.phase='no-border';debug.candidates=0;debug.headers=0;debug.lastError='';}
+ return findFrame(img,detectCandidates(img),debug);
 }
-const api={detectBounds,findFrame,decodeImageData};
+const api={detectCandidates,detectBounds,findFrame,decodeImageData};
 root.CimgScanner=api;
-if(typeof module!=="undefined"&&module.exports)module.exports=api;
+if(typeof module!=='undefined'&&module.exports)module.exports=api;
 })(globalThis);
